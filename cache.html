@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <title>جاري التخزين المؤقت - صالة فاخر للألعاب</title>
+    <meta name="author" content="ArabPixel">
+    <link rel="stylesheet" href="includes/css/colors/default.css">
+    <link rel="stylesheet" href="includes/css/layouts/index.css">
+    <link rel="stylesheet" href="includes/css/cache.css">
+</head>
+
+<body class="bg-gray-900 text-white">
+    <div id="site-bg" aria-hidden="true"></div>
+    <style>
+        /* Always-on low opacity background image */
+        #site-bg {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: url("image.png");
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: cover;
+            opacity: 0.18;
+        }
+
+        #site-bg::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            background: rgba(17, 24, 39, 0.45);
+        }
+
+        .mainContainer {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+    <main class="mainContainer">
+        <section class="cache-screen">
+            <div class="cache-title">جاري تجهيز تهكير البلايستيشن</div>
+            <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="progressFill"></div>
+            </div>
+            <div class="cache-subtitle" id="cacheStatus">جاري التحضير...</div>
+        </section>
+        <div class="absolute bottom-10 text-center w-full">نظام التخزين المؤقت حسب إصدار النظام</div>
+    </main>
+
+    <iframe id="cacheFrame" src="about:blank"></iframe>
+
+    <script src="includes/js/checkFw.js"></script>
+    <script>
+        var fwVersion = getPs4FwVersion(navigator.userAgent);
+
+        function getCachePage(fwVersion) {
+            var routes = [
+                { min: 6.70, max: 6.72, page: 'cache67x.html' },
+                { min: 7.00, max: 8.52, page: 'cache7-8xx.html' },
+                { min: 9.00, max: 9.60, page: 'cache9xx.html' },
+                { min: 10.00, max: 10.71, page: 'cache10xx.html' },
+                { min: 11.00, max: 11.52, page: 'cache11xx.html' },
+                { min: 12.00, max: 12.52, page: 'cache12xx.html' },
+                { min: 13.00, max: 13.00, page: 'cache1300.html' }
+            ];
+
+            var matchedPage = 'cachePayloads.html';
+            for (var i = 0; i < routes.length; i++) {
+                if (fwVersion >= routes[i].min && fwVersion <= routes[i].max) {
+                    matchedPage = routes[i].page;
+                    break;
+                }
+            }
+
+            return 'includes/caches/' + matchedPage;
+        }
+
+        var targetPage = getCachePage(fwVersion);
+
+        var statusEl = document.getElementById('cacheStatus');
+        var fillEl = document.getElementById('progressFill');
+        var frame = document.getElementById('cacheFrame');
+
+        // Listen for postMessages from the iframe (iframe_cache.js)
+        window.addEventListener('message', function (event) {
+            var data = event.data;
+            if (!data || !data.type) return;
+
+            if (data.type === 'CACHE_PROGRESS') {
+                if (data.percent >= 0) {
+                    fillEl.style.width = data.percent + '%';
+                    statusEl.textContent = 'جاري التحميل... ' + data.percent + '%';
+                } else {
+                    statusEl.textContent = 'جاري التحميل... (' + data.loaded + ' من ' + data.total + ')';
+                }
+            } else if (data.type === 'CACHE_COMPLETE' || data.type === 'CACHE_EXISTS') {
+                fillEl.style.width = '100%';
+                statusEl.textContent = data.type === 'CACHE_EXISTS' ? 'مخزّن مسبقاً! جاري التحويل...' : 'تم! جاري التحويل...';
+                setTimeout(function () {
+                    window.location.replace('./');
+                }, 1000);
+
+            } else if (data.type === 'CACHE_CHECKING') {
+                statusEl.textContent = 'جاري التحقق من الذاكرة المؤقتة...';
+            } else if (data.type === 'CACHE_DOWNLOADING') {
+                statusEl.textContent = 'جاري تخزين الملفات...';
+            } else if (data.type === 'CACHE_ERROR') {
+                var reason = data.reason || 'خطأ غير معروف';
+                statusEl.textContent = 'خطأ في التخزين المؤقت: ' + reason;
+                setTimeout(function () {
+                    window.location.replace('./');
+                }, 3000);
+            }
+        }, false);
+
+        // Load the firmware-based cache page into the hidden iframe
+        statusEl.textContent = 'جاري بدء التخزين المؤقت لإصدار النظام ' + (fwVersion || 'غير معروف') + '...';
+        frame.src = targetPage;
+    </script>
+</body>
+
+</html>
