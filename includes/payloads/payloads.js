@@ -2,6 +2,37 @@
 // @ts-nocheck
 var needsGoldHEN = false;   // check if the payload requires GoldHEN's PayLoader because of .elf format
 
+// --- Safety helpers -------------------------------------------------------
+// Returns a translated string, falling back to English if a language file
+// hasn't defined the key yet (keeps every language file working).
+function langStr(key, fallback) {
+    return (window.lang && window.lang[key]) ? window.lang[key] : fallback;
+}
+
+// Is this a .elf payload? ELF files can NOT be injected as raw shellcode by
+// the exploit chain - they must go through GoldHEN's PayLoader (elfldr).
+function isElfPath(p) {
+    return typeof p === 'string' && /\.elf(\?|$)/i.test(p);
+}
+
+// The ElfLoader / BinLoader helper binaries are shipped by upstream as 0-byte
+// placeholders. A zero-byte payload would be mmap'd and executed as if it were
+// real shellcode, which is why the console appeared to "run the jailbreak
+// instead of the payload".
+function isEmptyPayload(buf) {
+    return !buf || buf.byteLength === 0;
+}
+
+// Confirm a payload file actually contains data BEFORE we start the exploit
+// chain. Without this, an empty/missing file silently turns a payload click
+// into a plain jailbreak run.
+function verifyPayloadFile(PLfile, onOk, onFail) {
+    getPayload(PLfile, function (req) {
+        var ok = (req.status === 200 || req.status === 304) && !isEmptyPayload(req.response);
+        if (ok) { onOk(); } else { onFail(); }
+    });
+}
+
 var getPayload = function (payload, onLoadEndCallback) {
     var req = new XMLHttpRequest();
     req.open('GET', payload);
@@ -36,19 +67,42 @@ function Loadpayloadlocal(PLfile, name) { //Loading Payload via Payload Param.
     }
     req.send();
     req.onerror = function () {
-        // If its elfldr, change to .bin 
-        if (name == "ElfLoader") PLfile = "./includes/payloads/Bins/elfldr.bin";
+        // PayLoader (port 9090) isn't running.
+        //
+        // Previously this silently fell through to Loadpayloadonline(), which
+        // sets payload_path and runs the exploit chain, injecting the file as
+        // raw shellcode. That is wrong for .elf payloads (they are ELF
+        // executables, not shellcode) and lethal for the 0-byte elfldr
+        // placeholders - the console appeared to "run the jailbreak instead of
+        // the payload".
+        if (user.ps4Fw < webKitMin || user.ps4Fw > webKitMax || user.platform != "PS4") {
+            alert(window.lang.binLoaderNotDetected);
+            return;
+        }
 
-        if (user.ps4Fw >= webKitMin && user.ps4Fw <= webKitMax && user.platform == "PS4") {
+        // Confirm the payload file really exists and has content before we
+        // commit to anything. This is what stops a payload click from
+        // turning into a bare jailbreak run.
+        verifyPayloadFile(PLfile, function () {
+            if (isElfPath(PLfile)) {
+                // ELF payloads can only be delivered by GoldHEN's PayLoader.
+                alert(langStr('elfRequiresPayLoader',
+                    'This .elf payload must be loaded through GoldHEN PayLoader.\n\n' +
+                    'Enable GoldHEN (which opens the PayLoader on port 9090/9021), then click this payload again.'));
+                return;
+            }
             if (!isHttps()) {
                 if (confirm(window.lang.disabledBinloader)) {
                     Loadpayloadonline(PLfile);
                 }
-            } else Loadpayloadonline(PLfile);
-        } else {
-            alert(window.lang.binLoaderNotDetected);
-            return;
-        }
+            } else {
+                Loadpayloadonline(PLfile);
+            }
+        }, function () {
+            // Empty or unreadable file: refuse instead of jailbreaking.
+            alert(langStr('payloadFileEmpty',
+                'Payload file is empty or could not be read') + ':\n' + PLfile);
+        });
 
         return;
     };
@@ -134,6 +188,9 @@ function load_BinLoader(name) {
 }
 
 function load_Elfldr(name) {
+    // elfldr.elf is the upstream ElfLoader (0-byte placeholder in the repo).
+    // Do not silently swap it for elfldr.bin - that changes what the user asked
+    // for and, being 0 bytes, would run nothing.
     Loadpayloadlocal("./includes/payloads/Bins/elfldr.elf", name)
 }
 
